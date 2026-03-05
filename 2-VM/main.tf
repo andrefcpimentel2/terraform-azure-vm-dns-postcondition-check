@@ -45,7 +45,7 @@ resource "azurerm_linux_virtual_machine" "vm" {
   name                            = "new-vm"
   resource_group_name             = azurerm_resource_group.vm_rg.name
   location                        = azurerm_resource_group.vm_rg.location
-  size                            = "DC1ds_v3"
+  size                            = "Standard_B2s"
   admin_username                  = "adminuser"
   admin_password                  = var.password # Use SSH keys for production!
   disable_password_authentication = false
