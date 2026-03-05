@@ -13,7 +13,7 @@ variable "dns_rg_name" {
 variable "location" {
   description = "Location of the Resource Group and Private DNS Zone"
   type        = string
-  default     = "uksouth"
+  default     = "West Europe"
 }
 
 variable "dns_zone_name" {
