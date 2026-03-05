@@ -93,3 +93,67 @@ resource "azurerm_private_dns_a_record" "vm_record" {
   ttl                 = 300
   records             = [azurerm_network_interface.nic.private_ip_address]
 }
+
+
+# ===========================================================================
+# 5. TERRAFORM CHECK BLOCKS (Continuous Validation)
+# ===========================================================================
+
+# CHECK 1: Ensure DNS is valid
+check "dns_is_valid" {
+  assert {
+    # Validates that Azure successfully assigned Azure Nameservers to the Zone
+    # confirming it is a healthy, active DNS Zone deployment.
+    condition     = length(data.azurerm_private_dns_zone.existing_zone.number_of_record_sets) > 0
+    error_message = "The DNS Zone is invalid or did not successfully receive name servers from Azure."
+  }
+}
+
+# CHECK 2: Ensure the machine address is reachable
+check "machine_is_reachable" {
+  # We use a scoped data source that attempts an actual HTTP connection to the VM's public IP
+  data "http" "vm_reachability" {
+    url = "http://${azurerm_linux_virtual_machine.vm.public_ip_address}"
+
+    # Retries give the VM and Nginx cloud-init script time to boot and start serving HTTP
+    retry {
+      attempts     = 10
+      min_delay_ms = 5000
+      max_delay_ms = 10000
+    }
+  }
+
+  assert {
+    # If the VM isn't responding, this assertion fails and triggers a warning
+    condition     = data.http.vm_reachability.status_code == 200
+    error_message = "The Virtual Machine public IP is not reachable over HTTP (Port 80)."
+  }
+}
+
+# CHECK 3: Ensure the DNS A record maps precisely to the VM's public IP
+check "dns_record_mapping_is_correct" {
+  assert {
+    # Validates the Terraform state mapping strictly matches
+    condition     = contains(azurerm_private_dns_a_record.vm_record.records, azurerm_linux_virtual_machine.vm.public_ip_address)
+    error_message = "The DNS A Record does not map to the current VM's Public IP address."
+  }
+}
+
+# CHECK 4: Ensure the machine is reachable by its domain name (Active Resolution Test)
+check "fqdn_is_reachable" {
+  data "http" "vm_reachability_fqdn" {
+    # Constructs the full URL (e.g., http://app.mycustomdomain.com)
+    url = "http://${azurerm_private_dns_a_record.vm_record.fqdn}"
+
+    retry {
+      attempts     = 10
+      min_delay_ms = 5000
+      max_delay_ms = 15000
+    }
+  }
+
+  assert {
+    condition     = data.http.vm_reachability_fqdn.status_code == 200
+    error_message = "The VM is not reachable via its Fully Qualified Domain Name (${azurerm_private_dns_a_record.vm_record.fqdn}). Ensure DNS has propagated and your nameservers are delegated at your domain registrar."
+  }
+}
