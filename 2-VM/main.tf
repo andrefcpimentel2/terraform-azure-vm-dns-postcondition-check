@@ -104,7 +104,7 @@ check "dns_is_valid" {
   assert {
     # Validates that Azure successfully assigned Azure Nameservers to the Zone
     # confirming it is a healthy, active DNS Zone deployment.
-    condition     = length(data.azurerm_private_dns_zone.existing_zone.number_of_record_sets) > 0
+    condition     = data.azurerm_private_dns_zone.existing_zone.number_of_record_sets > 0
     error_message = "The DNS Zone is invalid or did not successfully receive name servers from Azure."
   }
 }
