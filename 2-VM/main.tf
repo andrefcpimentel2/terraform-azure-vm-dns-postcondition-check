@@ -29,6 +29,23 @@ resource "azurerm_subnet" "subnet" {
   address_prefixes     = ["10.1.1.0/24"]
 }
 
+resource "azurerm_network_security_group" "nsg" {
+  name                = "vm-nsg"
+  location            = azurerm_resource_group.vm_rg.location
+  resource_group_name = azurerm_resource_group.vm_rg.name
+
+  security_rule {
+    name                       = "Allow-HTTP"
+    priority                   = 100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "80"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+}
 resource "azurerm_network_interface" "nic" {
   name                = "new-vm-nic"
   location            = azurerm_resource_group.vm_rg.location
@@ -40,6 +57,88 @@ resource "azurerm_network_interface" "nic" {
     private_ip_address_allocation = "Dynamic"
   }
 }
+
+resource "azurerm_network_interface_security_group_association" "nic_nsg" {
+  network_interface_id      = azurerm_network_interface.nic.id
+  network_security_group_id = azurerm_network_security_group.nsg.id
+}
+
+# ==========================================
+# AZURE KEY VAULT & CERTIFICATE
+# ==========================================
+
+#Random pet name for unique AZKV
+resource "random_pet" "kv_name" {
+  length  = 4
+}
+
+# Fetch current Azure context (Tenant ID, Object ID) for Key Vault Access Policy
+data "azurerm_client_config" "current" {}
+
+resource "azurerm_key_vault" "kv" {
+  name                        = "${random_pet.kv_name.id}-kv" # Must be globally unique
+  location                    = azurerm_resource_group.vm_rg.location
+  resource_group_name         = azurerm_resource_group.vm_rg.name
+  tenant_id                   = data.azurerm_client_config.current.tenant_id
+  sku_name                    = "standard"
+  purge_protection_enabled    = false
+
+  access_policy {
+    tenant_id = data.azurerm_client_config.current.tenant_id
+    object_id = data.azurerm_client_config.current.object_id
+
+    certificate_permissions = [
+      "Create", "Delete", "Get", "List", "Update", "Purge"
+    ]
+    secret_permissions = [
+      "Get", "Set", "List", "Delete", "Purge"
+    ]
+  }
+}
+
+resource "azurerm_key_vault_certificate" "cert" {
+  name         = "example-vm-cert"
+  key_vault_id = azurerm_key_vault.kv.id
+
+  certificate_policy {
+    issuer_parameters {
+      name = "Self"
+    }
+    key_properties {
+      exportable = true
+      key_size   = 2048
+      key_type   = "RSA"
+      reuse_key  = true
+    }
+    lifetime_action {
+      action {
+        action_type = "AutoRenew"
+      }
+      trigger {
+        days_before_expiry = 30
+      }
+    }
+    secret_properties {
+      content_type = "application/x-pkcs12"
+    }
+    x509_certificate_properties {
+      extended_key_usage = ["1.3.6.1.5.5.7.3.1"] # Server Authentication
+      key_usage          = ["cRLSign", "dataEncipherment", "digitalSignature", "keyAgreement", "keyCertSign", "keyEncipherment"]
+      subject            = "CN=example-vm.local"
+      validity_in_months = 12
+    }
+  }
+
+  # --- POSTCONDITION ---
+  # Checks validity at the exact moment the resource is created/updated
+  lifecycle {
+    postcondition {
+      condition     = self.certificate_attribute[0].enabled == true
+      error_message = "Postcondition failed: The provisioned Key Vault Certificate is disabled."
+    }
+  }
+}
+
 
 resource "azurerm_linux_virtual_machine" "vm" {
   name                            = "new-vm"
@@ -65,6 +164,18 @@ resource "azurerm_linux_virtual_machine" "vm" {
     sku       = "22_04-lts"
     version   = "latest"
   }
+
+   # Installs Nginx so the HTTP checks have an endpoint to hit
+  custom_data = base64encode(<<-EOF
+    #!/bin/bash
+    apt-get update
+    apt-get install -y nginx
+    mkdir -p /etc/nginx/ssl
+    echo "some file content" | tee /etc/nginx/ssl/nginx.crt
+    systemctl start nginx
+    systemctl enable nginx
+  EOF
+  )
 }
 
 # ==========================================
@@ -155,5 +266,21 @@ check "fqdn_is_reachable" {
   assert {
     condition     = data.http.vm_reachability_fqdn.status_code == 200
     error_message = "The VM is not reachable via its Fully Qualified Domain Name (${azurerm_private_dns_a_record.vm_record.fqdn}). Ensure DNS has propagated and your nameservers are delegated at your domain registrar."
+  }
+}
+
+# CHECK 5: Check Certificate Validity 
+check "verify_certificate_validity" {
+
+  # Assertion 1: Check if the certificate is enabled
+  assert {
+    condition     = azurerm_key_vault_certificate.cert.certificate_attribute[0].enabled == true
+    error_message = "Check failed: The Key Vault certificate is currently disabled."
+  }
+
+  # Assertion 2: Check if the certificate is expired by comparing 'expires' date with the current time
+  assert {
+    condition     = timecmp(azurerm_key_vault_certificate.cert.certificate_attribute[0].expires, plantimestamp()) == 1
+    error_message = "Check failed: The Key Vault certificate has expired."
   }
 }
