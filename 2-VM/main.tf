@@ -69,7 +69,7 @@ resource "azurerm_network_interface_security_group_association" "nic_nsg" {
 
 #Random pet name for unique AZKV
 resource "random_pet" "kv_name" {
-  length  = 4
+  length  = 3
 }
 
 # Fetch current Azure context (Tenant ID, Object ID) for Key Vault Access Policy
@@ -271,6 +271,11 @@ check "fqdn_is_reachable" {
 
 # CHECK 5: Check Certificate Validity 
 check "verify_certificate_validity" {
+    #Using a data source as attributes here have more insights than the actual resource
+    data "azurerm_key_vault_certificate" "validation_cert" {
+    name         = azurerm_key_vault_certificate.cert.name
+    key_vault_id = azurerm_key_vault.kv.id
+  }
 
   # Assertion 1: Check if the certificate is enabled
   assert {
@@ -280,7 +285,13 @@ check "verify_certificate_validity" {
 
   # Assertion 2: Check if the certificate is expired by comparing 'expires' date with the current time
   assert {
-    condition     = timecmp(azurerm_key_vault_certificate.cert.certificate_attribute[0].expires, plantimestamp()) == 1
+    condition     = timecmp(data.azurerm_key_vault_certificate.validation_cert.expires, plantimestamp()) == 1
     error_message = "Check failed: The Key Vault certificate has expired."
+  }
+
+  # Assertion 3: Check if the certificate is expiring within the next month (30 days)
+  assert {
+    condition     = data.azurerm_key_vault_certificate.validation_cert.certificate_policy.x509_certificate_properties.validity_in_months <= 1
+    error_message = "Check failed: The Key Vault certificate is expiring in less than 1 month."
   }
 }
