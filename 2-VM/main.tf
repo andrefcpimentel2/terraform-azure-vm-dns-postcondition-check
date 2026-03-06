@@ -291,7 +291,7 @@ check "verify_certificate_validity" {
 
   # Assertion 3: Check if the certificate is expiring within the next month (30 days)
   assert {
-    condition     = data.azurerm_key_vault_certificate.validation_cert.certificate_policy[0].x509_certificate_properties.validity_in_months <= 1
+    condition     = data.azurerm_key_vault_certificate.validation_cert.certificate_policy[0].x509_certificate_properties[0].validity_in_months <= 1
     error_message = "Check failed: The Key Vault certificate is expiring in less than 1 month."
   }
 }
