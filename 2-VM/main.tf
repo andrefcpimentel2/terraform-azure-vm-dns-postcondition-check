@@ -245,7 +245,7 @@ check "machine_is_reachable" {
 check "dns_record_mapping_is_correct" {
   assert {
     # Validates the Terraform state mapping strictly matches
-    condition     = contains(azurerm_private_dns_a_record.vm_record.records, azurerm_linux_virtual_machine.vm.public_ip_address)
+    condition     = contains(azurerm_private_dns_a_record.vm_record[0].records, azurerm_linux_virtual_machine.vm.public_ip_address)
     error_message = "The DNS A Record does not map to the current VM's Public IP address."
   }
 }
@@ -291,7 +291,7 @@ check "verify_certificate_validity" {
 
   # Assertion 3: Check if the certificate is expiring within the next month (30 days)
   assert {
-    condition     = data.azurerm_key_vault_certificate.validation_cert.certificate_policy[0].x509_certificate_properties[0].validity_in_months <= 1
+    condition     = data.azurerm_key_vault_certificate.validation_cert.certificate_policy[0].x509_certificate_properties[0].validity_in_months >= 1
     error_message = "Check failed: The Key Vault certificate is expiring in less than 1 month."
   }
 }
