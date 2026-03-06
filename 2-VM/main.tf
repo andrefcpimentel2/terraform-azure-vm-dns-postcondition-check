@@ -245,7 +245,7 @@ check "machine_is_reachable" {
 check "dns_record_mapping_is_correct" {
   assert {
     # Validates the Terraform state mapping strictly matches
-    condition     = contains(azurerm_private_dns_a_record.vm_record[0].records, azurerm_linux_virtual_machine.vm.public_ip_address)
+    condition     = contains(azurerm_private_dns_a_record.vm_record.records, azurerm_linux_virtual_machine.vm.public_ip_address)
     error_message = "The DNS A Record does not map to the current VM's Public IP address."
   }
 }
