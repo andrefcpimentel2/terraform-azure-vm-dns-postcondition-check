@@ -140,7 +140,7 @@ resource "azurerm_key_vault_certificate" "cert" {
 }
 
 data "azurerm_shared_image_version" "latest" {
-  name                = "recent"
+  name                = "0.20260226.004007"
   image_name          = "hc-base-ubuntu-2404-amd64"
   gallery_name        = "hcbaseGallery"
   resource_group_name = "hc-base-rg-gallery"
