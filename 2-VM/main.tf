@@ -139,6 +139,13 @@ resource "azurerm_key_vault_certificate" "cert" {
   }
 }
 
+data "azurerm_shared_image_version" "latest" {
+  name                = "latest"
+  image_name          = "hc-base-ubuntu-2404-amd64"
+  gallery_name        = "hcbaseGallery"
+  resource_group_name = "hc-base-rg-gallery"
+
+}
 
 resource "azurerm_linux_virtual_machine" "vm" {
   name                            = "new-vm"
@@ -158,12 +165,7 @@ resource "azurerm_linux_virtual_machine" "vm" {
     storage_account_type = "Standard_LRS"
   }
 
-  source_image_reference {
-    publisher = "Canonical"
-    offer     = "0001-com-ubuntu-server-jammy"
-    sku       = "22_04-lts"
-    version   = "latest"
-  }
+source_image_id = data.azurerm_shared_image_version.latest.id
 
    # Installs Nginx so the HTTP checks have an endpoint to hit
   custom_data = base64encode(<<-EOF
